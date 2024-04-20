@@ -38,6 +38,7 @@
 #include <nautilus-extension.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <xdp-gnome/externalwindow.h>
 
 #include "nautilus-bookmark-list.h"
 #include "nautilus-clipboard.h"
@@ -53,6 +54,7 @@
 #include "nautilus-global-preferences.h"
 #include "nautilus-icon-info.h"
 #include "nautilus-module.h"
+#include "nautilus-portal.h"
 #include "nautilus-preferences-window.h"
 #include "nautilus-previewer.h"
 #include "nautilus-progress-persistence-handler.h"
@@ -72,6 +74,7 @@ typedef struct
     NautilusProgressPersistenceHandler *progress_handler;
     NautilusDBusManager *dbus_manager;
     NautilusFreedesktopDBus *fdb_manager;
+    NautilusPortal *portal_implementation;
 
     NautilusBookmarkList *bookmark_list;
 
@@ -1122,10 +1125,22 @@ nautilus_application_startup (GApplication *app)
 
     g_application_set_resource_base_path (G_APPLICATION (self), "/org/gnome/nautilus");
 
-    /* chain up to the GTK+ implementation early, so gtk_init()
+    /* Initialize GDK display (for wayland-x11-interop protocol) before GTK does
+     * it during the chain-up. */
+    g_autoptr (GError) error = NULL;
+    GdkDisplay *display = init_external_window_display (&error);
+    if (error != NULL)
+    {
+        g_message ("Failed to initialize display server connection: %s",
+                   error->message);
+    }
+
+    /* Chain up to the GtkApplication implementation early, so that gtk_init()
      * is called for us.
      */
     G_APPLICATION_CLASS (nautilus_application_parent_class)->startup (G_APPLICATION (self));
+
+    g_assert (gdk_display_get_default () == display);
 
     gtk_window_set_default_icon_name (APPLICATION_ID);
 
@@ -1187,6 +1202,13 @@ nautilus_application_dbus_register (GApplication     *app,
         return FALSE;
     }
 
+    priv->portal_implementation = nautilus_portal_new ();
+    if (g_strcmp0 (g_getenv ("RUNNING_TESTS"), "TRUE") != 0 &&
+        !nautilus_portal_register (priv->portal_implementation, connection, error))
+    {
+        return FALSE;
+    }
+
     priv->search_provider = nautilus_shell_search_provider_new ();
     if (!nautilus_shell_search_provider_register (priv->search_provider, connection, error))
     {
@@ -1217,6 +1239,12 @@ nautilus_application_dbus_unregister (GApplication    *app,
     {
         nautilus_freedesktop_dbus_unregister (priv->fdb_manager);
         g_clear_object (&priv->fdb_manager);
+    }
+
+    if (priv->portal_implementation != NULL)
+    {
+        nautilus_portal_unregister (priv->portal_implementation);
+        g_clear_object (&priv->portal_implementation);
     }
 
     if (priv->search_provider)
