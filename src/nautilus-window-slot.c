@@ -2022,6 +2022,11 @@ load_new_location (NautilusWindowSlot *self,
     g_assert (self != NULL);
     g_assert (location != NULL);
 
+    if (selection == self->pending_selection)
+    {
+        self->pending_selection = NULL;
+    }
+
     /* Note, these may recurse into report_load_underway */
     if (self->content_view != NULL && tell_current_content_view)
     {
