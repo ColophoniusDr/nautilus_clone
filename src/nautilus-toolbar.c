@@ -161,6 +161,7 @@ nautilus_toolbar_constructed (GObject *object)
     self->path_bar = GTK_WIDGET (g_object_new (NAUTILUS_TYPE_PATH_BAR, NULL));
     gtk_box_append (GTK_BOX (self->path_bar_container),
                     self->path_bar);
+    g_object_bind_property (self, "window-slot", self->path_bar, "window-slot", G_BINDING_SYNC_CREATE);
 
     self->location_entry = nautilus_location_entry_new ();
     gtk_box_append (GTK_BOX (self->location_entry_container),
