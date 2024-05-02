@@ -1256,52 +1256,13 @@ get_view_directory (NautilusFilesView *view)
     return path;
 }
 
-typedef struct
-{
-    gchar *uri;
-    gboolean is_update;
-} PreviewExportData;
-
-static void
-preview_export_data_free (gpointer _data)
-{
-    PreviewExportData *data = _data;
-    g_free (data->uri);
-    g_free (data);
-}
-
-G_DEFINE_AUTOPTR_CLEANUP_FUNC (PreviewExportData, preview_export_data_free)
-
-static void
-on_window_handle_export (NautilusWindow *window,
-                         const char     *handle,
-                         gpointer        user_data)
-{
-    g_autoptr (PreviewExportData) data = user_data;
-    nautilus_previewer_call_show_file (data->uri, handle, !data->is_update);
-}
-
-static void
-nautilus_files_view_preview (NautilusFilesView *view,
-                             PreviewExportData *data)
-{
-    if (!nautilus_window_export_handle (nautilus_files_view_get_window (view),
-                                        on_window_handle_export,
-                                        data))
-    {
-        /* Let's use a fallback, so at least a preview will be displayed */
-        nautilus_previewer_call_show_file (data->uri, "x11:0", !data->is_update);
-    }
-}
-
 static void
 nautilus_files_view_preview_update (NautilusFilesView *view)
 {
     NautilusFilesViewPrivate *priv = nautilus_files_view_get_instance_private (view);
     GtkApplication *app;
-    GtkWindow *window;
+    GtkRoot *window;
     g_autolist (NautilusFile) selection = NULL;
-    PreviewExportData *data;
 
     if (!priv->active ||
         !nautilus_previewer_is_visible ())
@@ -1310,8 +1271,8 @@ nautilus_files_view_preview_update (NautilusFilesView *view)
     }
 
     app = GTK_APPLICATION (g_application_get_default ());
-    window = GTK_WINDOW (nautilus_files_view_get_window (view));
-    if (window == NULL || window != gtk_application_get_active_window (app))
+    window = gtk_widget_get_root (GTK_WIDGET (view));
+    if (window == NULL || GTK_WINDOW (window) != gtk_application_get_active_window (app))
     {
         return;
     }
@@ -1322,11 +1283,9 @@ nautilus_files_view_preview_update (NautilusFilesView *view)
         return;
     }
 
-    data = g_new0 (PreviewExportData, 1);
-    data->uri = nautilus_file_get_uri (selection->data);
-    data->is_update = TRUE;
+    g_autofree gchar *uri = nautilus_file_get_uri (selection->data);
 
-    nautilus_files_view_preview (view, data);
+    nautilus_previewer_call_show_file (uri, window, FALSE);
 }
 
 void
@@ -1800,14 +1759,13 @@ action_preview_selection (GSimpleAction *action,
 {
     NautilusFilesView *view = NAUTILUS_FILES_VIEW (user_data);
     g_autolist (NautilusFile) selection = NULL;
-    PreviewExportData *data = g_new0 (PreviewExportData, 1);
+    GtkRoot *window = gtk_widget_get_root (GTK_WIDGET (view));
 
     selection = nautilus_view_get_selection (NAUTILUS_VIEW (view));
 
-    data->uri = nautilus_file_get_uri (selection->data);
-    data->is_update = FALSE;
+    g_autofree gchar *uri = nautilus_file_get_uri (selection->data);
 
-    nautilus_files_view_preview (view, data);
+    nautilus_previewer_call_show_file (uri, window, TRUE);
 }
 
 static void
